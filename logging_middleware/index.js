@@ -1,9 +1,10 @@
-const DEFAULT_BASE_URL = "http://4.224.186.213/evaluation-service";
+const BASE_URL = process.env.BASE_URL || "http://4.224.186.213/evaluation-service";
+const ACCESS_TOKEN = process.env.ACCESS_TOKEN;
 
-const ALLOWED_STACKS = new Set(["backend", "frontend"]);
-const ALLOWED_LEVELS = new Set(["debug", "info", "warn", "error", "fatal"]);
+const VALID_STACKS = ["backend", "frontend"];
+const VALID_LEVELS = ["debug", "info", "warn", "error", "fatal"];
 
-const BACKEND_PACKAGES = new Set([
+const VALID_PACKAGES = [
   "cache",
   "controller",
   "cron_job",
@@ -12,79 +13,76 @@ const BACKEND_PACKAGES = new Set([
   "handler",
   "repository",
   "route",
-  "service"
-]);
-
-const FRONTEND_PACKAGES = new Set([
+  "service",
   "api",
   "component",
   "hook",
   "page",
   "state",
-  "style"
-]);
+  "style",
+  "auth",
+  "config",
+  "middleware",
+  "utils"
+];
 
-const COMMON_PACKAGES = new Set(["auth", "config", "middleware", "utils"]);
+async function Log(stack, level, packageName, message) {
+  if (!ACCESS_TOKEN) {
+    return {
+      success: false,
+      error: "ACCESS_TOKEN is missing"
+    };
+  }
 
-function isValidPackage(stack, pkg) {
-  if (COMMON_PACKAGES.has(pkg)) return true;
-  if (stack === "backend") return BACKEND_PACKAGES.has(pkg);
-  if (stack === "frontend") return FRONTEND_PACKAGES.has(pkg);
-  return false;
+  if (!VALID_STACKS.includes(stack)) {
+    return {
+      success: false,
+      error: "Invalid stack"
+    };
+  }
+
+  if (!VALID_LEVELS.includes(level)) {
+    return {
+      success: false,
+      error: "Invalid level"
+    };
+  }
+
+  if (!VALID_PACKAGES.includes(packageName)) {
+    return {
+      success: false,
+      error: "Invalid package"
+    };
+  }
+
+  try {
+    const response = await fetch(`${BASE_URL}/logs`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ACCESS_TOKEN}`
+      },
+      body: JSON.stringify({
+        stack,
+        level,
+        package: packageName,
+        message
+      })
+    });
+
+    const data = await response.json();
+
+    return {
+      success: response.ok,
+      status: response.status,
+      data
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message
+    };
+  }
 }
 
-function validateLogInput(stack, level, pkg, message) {
-  if (!ALLOWED_STACKS.has(stack)) {
-    throw new Error("Invalid stack. Use backend or frontend in lowercase.");
-  }
-
-  if (!ALLOWED_LEVELS.has(level)) {
-    throw new Error("Invalid level. Use debug, info, warn, error, or fatal in lowercase.");
-  }
-
-  if (!isValidPackage(stack, pkg)) {
-    throw new Error("Invalid package for selected stack.");
-  }
-
-  if (typeof message !== "string" || message.trim().length === 0) {
-    throw new Error("Message must be a non-empty string.");
-  }
-}
-
-async function Log(stack, level, pkg, message) {
-  validateLogInput(stack, level, pkg, message);
-
-  const baseUrl = process.env.EVALUATION_BASE_URL || DEFAULT_BASE_URL;
-  const token = process.env.ACCESS_TOKEN;
-
-  if (!token) {
-    throw new Error("ACCESS_TOKEN is missing in environment variables.");
-  }
-
-  const response = await fetch(`${baseUrl}/logs`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`
-    },
-    body: JSON.stringify({
-      stack,
-      level,
-      package: pkg,
-      message
-    })
-  });
-
-  const responseBody = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(`Log API failed with status ${response.status}`);
-  }
-
-  return responseBody;
-}
-
-module.exports = {
-  Log,
-  validateLogInput
-};
+module.exports = { Log };
